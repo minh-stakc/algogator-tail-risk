@@ -1,75 +1,93 @@
 """
 generate_pdf.py
-Generates the AlgoGators rough draft PDF matching the official template.
-Template sections: 1-Abstract  2-Introduction  3-Methodology  4-Results
-                   5-Discussion  6-Conclusion  7-References  8-Appendices
-                   + Disclaimer
+AlgoGators rough draft - matches the official template exactly.
+
+Template specs (from Rough Draft [TEMPLATE - DO NOT MODIFY].docx):
+  - Heading color:  #2F5496
+  - Heading 1:      16 pt
+  - Heading 2:      13 pt
+  - Body:           12 pt (Calibri - approximated with Helvetica)
+  - Margins:        1 inch (25.4 mm) all sides
+  - Header:         AlgoGators logo every page (except title)
+  - Footer:         Centered page number, starts at 2
+  - Sections:       1 Abstract  2 Introduction  3 Methodology
+                    4 Results   5 Discussion    6 Conclusion
+                    7 References  8 Appendices  + Disclaimer
 """
 
-import os
+import os, sys
 from fpdf import FPDF
 from fpdf.enums import XPos, YPos
 from PIL import Image as PILImage
 
-TITLE  = "Regime-Conditional Tail Risk Modeling for Portfolio Risk Management"
-AUTHOR = "Nathan Hoang"
-ORG    = "AlgoGators Capstone Project"
-DATE   = "March 2026"
-OUT    = "rough_draft.pdf"
+# ── constants ────────────────────────────────────────────────────────────────
+TITLE      = "Regime-Conditional Tail Risk Modeling for Portfolio Risk Management"
+AUTHOR     = "Nathan Hoang"
+ORG        = "AlgoGators Capstone Project"
+DATE       = "March 2026"
+GITHUB_URL = "https://github.com/minh-stakc/algogator-tail-risk"
+OUT        = "rough_draft.pdf"
 
-# Template colour palette (from theme1.xml)
-DARK_BLUE = (68,  84, 106)   # #44546A  - headings
-ACCENT    = (68, 114, 196)   # #4472C4  - accent / table header
-BLACK     = (30,  30,  30)
-GRAY      = (110, 110, 110)
-LGRAY     = (220, 220, 220)
-WHITE     = (255, 255, 255)
-ROW_EVEN  = (235, 241, 251)
-ROW_ODD   = (255, 255, 255)
+# Template palette
+HEAD_COL = (47, 84, 150)    # #2F5496 - all section headings
+SUB_COL  = (47, 84, 150)    # same for sub-headings
+BLACK    = (30, 30, 30)
+GRAY     = (110, 110, 110)
+LGRAY    = (210, 210, 210)
+WHITE    = (255, 255, 255)
+ROW_A    = (235, 241, 251)   # alternating table row tint
+ROW_B    = (255, 255, 255)
+TBL_HDR  = (47, 84, 150)     # table header = heading colour
 
-MARGIN   = 25.4   # 1-inch margins (standard Word default)
-PAGE_W   = 215.9
-USABLE_W = PAGE_W - 2 * MARGIN   # 165.1 mm
+# Page geometry
+MARGIN   = 25.4              # 1 inch
+PAGE_W   = 215.9             # Letter width mm
+PAGE_H   = 279.4             # Letter height mm
+USABLE_W = PAGE_W - 2*MARGIN # 165.1 mm
+LOGO_W   = 48.0              # mm - logo rendered width in header
 
-# ── content ─────────────────────────────────────────────────────────────────
+LOGO_FILE = "algogators_logo.png"
+
+
+# ── content ──────────────────────────────────────────────────────────────────
 
 ABSTRACT_TEXT = (
-    "This paper investigates whether regime-aware risk models produce better "
-    "Conditional Value-at-Risk (CVaR) forecasts than standard portfolio risk "
-    "approaches. Using daily returns from the S&P 500 and nine sector ETFs "
-    "over 2005-2024, I detect market regimes with a Hidden Markov Model (HMM) "
-    "and estimate tail risk within each regime using Peaks-over-Threshold "
-    "extreme value theory. The results are mixed. Regime conditioning reveals "
-    "something economically real - the high-volatility regime has a CVaR "
-    "nearly three times larger than the calm regime, and cross-asset "
-    "correlations jump sharply during stress periods. On standard "
-    "out-of-sample backtesting, however, GARCH(1,1) still outperforms the "
-    "regime-conditional model because it reacts to volatility changes one "
-    "day at a time, while HMM regime detection can lag sudden shocks by "
-    "days or weeks. Regime models do excel during prolonged stress: in the "
+    "This paper investigates whether regime-aware risk models can produce "
+    "better Conditional Value-at-Risk (CVaR) forecasts than the standard "
+    "approaches portfolio managers typically use. Using daily returns from "
+    "the S&P 500 and nine sector ETFs over 2005-2024, I detect market regimes "
+    "with a Hidden Markov Model (HMM) and estimate tail risk within each "
+    "regime using Peaks-over-Threshold extreme value theory. The results are "
+    "mixed. Regime conditioning reveals something economically real - the "
+    "high-volatility regime has a CVaR nearly three times larger than the "
+    "calm regime, and cross-asset correlations jump sharply during stress. "
+    "On standard out-of-sample backtesting, however, GARCH(1,1) still "
+    "outperforms the regime-conditional model because it reacts to volatility "
+    "changes one day at a time, while HMM regime detection lags sudden shocks "
+    "by days or weeks. Regime models do excel during prolonged stress: in the "
     "2022 rate-hike cycle, regime-conditional CVaR had only 0.4% violations "
     "versus 3-4% for all baselines. The practical takeaway is a two-layer "
-    "framework - GARCH for daily risk limits and HMM regime probability as "
-    "a strategic overlay for slower-moving macro risks."
+    "framework - GARCH for daily risk limits and HMM regime probability as a "
+    "strategic overlay for slower-moving macro risks."
 )
 
-# Each block: (sub-heading or "", body_text | "TABLE_X" | "FIGURE_X")
-INTRO_BLOCKS = [
+# ── section content: (sub-heading, body | TABLE_X | FIGURE_X) ───────────────
+
+S_INTRO = [
 ("", (
-    "Most portfolio risk models assume that return distributions stay roughly "
+    "Most portfolio risk models assume return distributions stay roughly "
     "stable over time. That assumption works fine during normal markets, but "
-    "it falls apart during crises - when correlations spike, losses cluster, "
-    "and the tails of the return distribution get much fatter. A model "
-    "calibrated on mixed calm-and-crisis data will systematically "
-    "underestimate risk during the exact periods when accurate estimates "
-    "matter most."
+    "it falls apart during crises - correlations spike, losses cluster, and "
+    "distribution tails get much fatter. A model calibrated on mixed calm-"
+    "and-crisis data systematically underestimates risk during the exact "
+    "periods when accurate estimates matter most."
 )),
 ("", (
     "The metric this paper focuses on is Conditional Value-at-Risk (CVaR), "
     "also called Expected Shortfall - the expected loss given that losses "
-    "exceed the 95th percentile on any given day. CVaR is preferred over "
-    "plain VaR because it captures how bad losses actually get in the tail, "
-    "not just where the tail starts."
+    "exceed the 95th percentile. CVaR is preferred over VaR because it "
+    "captures how bad losses actually get in the tail, not just where the "
+    "tail starts."
 )),
 ("Research Question", (
     "Do regime-aware risk models that combine Bayesian changepoint detection "
@@ -79,27 +97,27 @@ INTRO_BLOCKS = [
 ("Hypothesis", (
     "Return distributions and cross-asset dependence structures behave "
     "differently across market regimes. Pooling observations from calm and "
-    "stress periods into one model hides this variation and leads to "
-    "systematic underestimation of joint tail risk during crises. Separating "
-    "estimation by regime should improve CVaR forecast accuracy and stability."
+    "stress periods leads to systematic underestimation of joint tail risk "
+    "during crises. Separating estimation by regime should improve CVaR "
+    "forecast accuracy and stability."
 )),
 ("Approach", (
     "I detect regimes using a 2-state Gaussian HMM and a Bayesian changepoint "
     "algorithm (PELT), fit Generalized Pareto Distributions to the loss tails "
-    "within each regime, and compare out-of-sample CVaR accuracy against three "
-    "baselines: static historical simulation, rolling-window historical "
-    "simulation, and GARCH(1,1)."
+    "within each regime, and compare out-of-sample CVaR accuracy against "
+    "three baselines: static historical simulation, rolling-window simulation, "
+    "and GARCH(1,1)."
 )),
 ]
 
-METHOD_BLOCKS = [
+S_METHOD = [
 ("2.1  Data", (
     "I downloaded daily adjusted closing prices from Yahoo Finance for ten "
     "equity instruments: SPY (S&P 500) and nine sector SPDR ETFs (XLF, XLE, "
     "XLV, XLK, XLI, XLP, XLU, XLY, XLB), covering January 2005 through "
     "December 2024 - 5,031 trading days total. The sample intentionally spans "
     "the 2008 Global Financial Crisis, the 2020 COVID crash, and the 2022 "
-    "Federal Reserve tightening cycle. VIX was also downloaded as a "
+    "Federal Reserve tightening cycle. VIX was also included as a "
     "supplementary stress indicator. Daily log returns were computed and an "
     "equal-weight portfolio constructed. Data were split into a training set "
     "(2005-2017, 3,271 days) and a test set (2018-2024, 1,760 days). Table 1 "
@@ -108,15 +126,15 @@ METHOD_BLOCKS = [
 ("", "TABLE_1"),
 ("", "FIGURE_1"),
 ("2.2  Regime Detection", (
-    "I used two complementary methods. The PELT algorithm with a BIC penalty "
-    "was applied to rolling 21-day realized volatility, detecting 36 "
-    "structural breakpoints across the sample - with key dates aligning to "
-    "September 2008, February 2020, and May 2022 (Figure 3). A 2-state "
-    "Gaussian HMM was then fitted to a feature matrix of rolling volatility, "
-    "rolling mean return, and VIX level. The HMM produces both a soft "
-    "posterior probability over states and a hard Viterbi assignment. "
-    "Both states are highly persistent: P(stay low-vol) = 99.1%, "
-    "P(stay high-vol) = 98.1% (Table 2, Figure 2)."
+    "Two complementary methods were used. The PELT algorithm with a BIC "
+    "penalty was applied to rolling 21-day realized volatility, detecting 36 "
+    "structural breakpoints - with key dates aligning to September 2008, "
+    "February 2020, and May 2022 (Figure 3). A 2-state Gaussian HMM was "
+    "then fitted to a feature matrix of rolling volatility, rolling mean "
+    "return, and VIX level. The HMM produces both a soft posterior probability "
+    "over states and a hard Viterbi assignment. Both states are highly "
+    "persistent: P(stay low-vol) = 99.1%, P(stay high-vol) = 98.1% "
+    "(Table 2, Figure 2)."
 )),
 ("", "TABLE_2"),
 ("", "FIGURE_3"),
@@ -133,38 +151,37 @@ METHOD_BLOCKS = [
 ("2.4  Copula Analysis", (
     "To model joint tail behavior across assets, I fitted a Gaussian copula "
     "(zero tail dependence baseline), a Student-t copula with estimated "
-    "degrees of freedom, and a bivariate Clayton copula capturing lower-tail "
-    "dependence between SPY and XLF."
+    "degrees of freedom, and a bivariate Clayton copula capturing asymmetric "
+    "lower-tail dependence between SPY and XLF."
 )),
 ("2.5  Backtesting", (
     "Regime-conditional models were evaluated via an expanding-window "
     "walk-forward backtest with quarterly re-estimation and a 3-year minimum "
-    "burn-in. Accuracy was assessed using the Kupiec (1995) "
-    "Proportion-of-Failures test, the Christoffersen (1998) Conditional "
-    "Coverage test, and pairwise Diebold-Mariano forecast comparison."
+    "burn-in. Accuracy was assessed using the Kupiec (1995) Proportion-of-"
+    "Failures test, the Christoffersen (1998) Conditional Coverage test, "
+    "and pairwise Diebold-Mariano forecast comparison."
 )),
 ]
 
-RESULTS_BLOCKS = [
+S_RESULTS = [
 ("4.1  Regime Characteristics", (
     "The HMM assigns 67.8% of days to the low-vol regime and 32.2% to the "
-    "high-vol regime. The economic difference between the two is large."
+    "high-vol regime. Table 3 and Figure 4 show the key differences."
 )),
 ("", "TABLE_3"),
 ("", "FIGURE_4"),
 ("", (
-    "The high-vol regime produces CVaR roughly 2.8x larger than the low-vol "
-    "regime (4.42% vs. 1.56%), and excess kurtosis over four times higher "
-    "(6.05 vs. 1.39). Figure 2 shows how the HMM posterior probability of "
-    "the high-vol state spikes cleanly during GFC 2008, COVID 2020, and the "
-    "2022 rate-hike cycle."
+    "The high-vol regime produces CVaR roughly 2.8x larger (4.42% vs. 1.56%) "
+    "and excess kurtosis over four times higher (6.05 vs. 1.39). Annualized "
+    "returns are sharply negative (-6.8% vs. +16.5%). Figure 2 shows the "
+    "HMM high-vol posterior probability spiking cleanly during GFC 2008, "
+    "COVID 2020, and the 2022 rate-hike cycle."
 )),
-("4.2  Correlation Breakdown", (
-    "Cross-asset correlations rise sharply in the high-vol regime. The "
-    "Utilities sector (XLU) is the most extreme example - its correlation "
-    "with SPY nearly doubles from 0.43 to 0.76. A static model calibrated "
-    "on pooled data misses this completely, understating joint tail risk "
-    "during the exact periods when it is highest."
+("4.2  Correlation Breakdown in Stress", (
+    "Cross-asset correlations rise sharply in the high-vol regime. XLU "
+    "(Utilities) is the most extreme: its correlation with SPY nearly doubles "
+    "from 0.43 to 0.76. A static model calibrated on pooled data misses this "
+    "entirely, understating joint tail risk precisely when it is highest."
 )),
 ("", "TABLE_4"),
 ("4.3  EVT Results", (
@@ -179,89 +196,91 @@ RESULTS_BLOCKS = [
 ("", "FIGURE_7"),
 ("4.4  Copula Analysis", (
     "The Student-t copula on all ten assets gives nu = 4.30, indicating "
-    "substantial joint tail dependence. The Clayton copula on SPY-XLF "
-    "gives lower tail dependence lambda = 0.770 - nearly 3 in 4 extreme "
-    "SPY losses coincide with an extreme XLF loss. Tail dependence peaks "
-    "during COVID 2020 (lambda = 0.694), confirming that simultaneous "
-    "crashes were especially likely during that episode (Table 6, Figure 5)."
+    "substantial joint tail dependence. The Clayton copula on SPY-XLF gives "
+    "lower tail dependence lambda = 0.770 - nearly 3 in 4 extreme SPY losses "
+    "coincide with an extreme XLF loss. Tail dependence peaks during COVID "
+    "2020 (lambda = 0.694), confirming simultaneous crashes were especially "
+    "likely during that episode (Table 6, Figure 5)."
 )),
 ("", "TABLE_6"),
 ("", "FIGURE_5"),
 ("4.5  Out-of-Sample Backtesting", (
     "Table 7 shows the full backtest over the 2018-2024 test period. "
-    "A properly calibrated 95% CVaR model should have a 5% violation rate."
+    "A properly calibrated 95% CVaR model should produce a 5% violation rate."
 )),
 ("", "TABLE_7"),
 ("", "FIGURE_6"),
 ("", (
-    "No model hits 5%. Static-Hist is the worst at 1.48% - way too "
-    "conservative, tying up unnecessary capital. GARCH comes closest (3.58%) "
-    "with the lowest MAE (0.021). Diebold-Mariano tests confirm GARCH beats "
-    "Regime-EVT on squared forecast error (DM = 5.71, p < 0.001)."
+    "No model hits 5%. Static-Hist is the worst at 1.48% - overstating risk "
+    "and tying up unnecessary capital. GARCH comes closest (3.58%) with the "
+    "lowest MAE (0.021). Diebold-Mariano tests confirm GARCH beats Regime-EVT "
+    "on squared forecast error (DM = 5.71, p < 0.001)."
 )),
-("4.6  Stress-Period Analysis", "TABLE_8"),
+("4.6  Stress-Period Analysis", (
+    "Table 8 and Figure 8 break down violation rates during the named stress "
+    "events."
+)),
+("", "TABLE_8"),
 ("", "FIGURE_8"),
 ("", (
-    "The split is stark. During COVID 2020, regime models perform worst "
+    "The split is stark. During COVID 2020 regime models perform worst "
     "(28.9% violations) - the HMM was still in low-vol mode when the crash "
     "started. During the 2022 rate-hike cycle, regime models are best by "
-    "far (0.4% violations vs. 3-4% for all baselines). Once the HMM "
-    "locked onto the high-vol state, it held it through the entire cycle."
+    "far (0.4% violations vs. 3-4% for baselines). Once the HMM locked onto "
+    "the high-vol state, it held it through the entire cycle."
 )),
 ]
 
-DISCUSSION_BLOCKS = [
+S_DISCUSSION = [
 ("5.1  What the Results Mean", (
-    "The hypothesis gets partial support. Regime conditioning clearly "
-    "captures something real - tail distributions, correlations, and joint "
-    "tail dependence all differ significantly across regimes. Any risk "
-    "framework that ignores this structure is missing important information. "
-    "That said, turning that insight into better real-time CVaR forecasts is "
-    "harder than expected. The regime detection lag is the core problem: by "
-    "the time the HMM is confident the regime has shifted, the worst losses "
-    "may already be behind you. GARCH avoids this because it responds to "
-    "yesterday's realized return directly, adapting at a one-day lag instead "
-    "of multi-week lag."
+    "The hypothesis gets partial support. Regime conditioning clearly captures "
+    "something real - tail distributions, correlations, and joint tail "
+    "dependence all differ significantly across regimes. Any risk framework "
+    "that ignores this structure is missing important information. That said, "
+    "the regime detection lag is the core problem: by the time the HMM is "
+    "confident the regime has shifted, the worst losses may already be behind "
+    "you. GARCH avoids this because it responds to yesterday's realized "
+    "return directly, adapting at a one-day lag instead of a multi-week lag."
 )),
 ("5.2  Implications for the Fund", (
     "The most practical takeaway is a two-layer framework. Use GARCH for "
     "daily CVaR limits and position sizing - it is the best single tool for "
-    "day-to-day risk management. Use HMM regime probability as a strategic "
-    "overlay: when P(high-vol) crosses ~40%, scale back exposure "
+    "day-to-day risk management. Layer HMM regime probability on top as a "
+    "strategic overlay: when P(high-vol) crosses ~40%, scale back exposure "
     "pre-emptively before volatility fully materializes. The 2022 result "
     "shows regime models are very effective once a sustained stress "
-    "environment is established. The copula analysis also provides useful "
-    "input for hedging - when tail dependence spikes, apparent diversifiers "
-    "stop providing protection."
+    "environment is established. The copula analysis also informs hedging - "
+    "when tail dependence spikes, apparent diversifiers stop providing "
+    "protection."
 )),
 ("5.3  Limitations", (
     "The regime detection lag is the main limitation. A forward-looking "
-    "indicator - credit spreads, VIX term structure slope - could help "
-    "reduce it. The equal-weight portfolio simplifies the analysis; a "
-    "real portfolio with time-varying weights would require CVaR "
-    "computed on the actual weight vector. Copula-based CVaR was estimated "
-    "in-sample only, and PELT was applied to the full sample - a live "
-    "implementation would need an online variant such as BOCPD."
+    "indicator - credit spreads or VIX term structure slope - could help "
+    "reduce it. The equal-weight portfolio simplifies the analysis; a real "
+    "fund portfolio with time-varying weights would require CVaR computed "
+    "on the actual weight vector. Copula-based CVaR was estimated in-sample "
+    "only, and PELT was applied to the full sample for visualization - a "
+    "live implementation would need BOCPD."
 )),
 ]
 
-CONCLUSION_BLOCKS = [
+S_CONCLUSION = [
 ("", (
-    "Market regimes genuinely matter for tail risk. The high-vol regime "
-    "has fundamentally different tail properties, higher correlations, and "
-    "greater joint crash risk - and mixing the two in one model distorts "
-    "estimates in both directions. But the regime detection lag prevents "
-    "this from translating into better out-of-sample CVaR numbers during "
-    "sudden shocks like COVID 2020. GARCH handles those better."
+    "Market regimes genuinely matter for tail risk. The high-vol regime has "
+    "fundamentally different tail properties, higher correlations, and greater "
+    "joint crash risk - mixing the two in one model distorts estimates in "
+    "both directions. But the regime detection lag prevents this from "
+    "translating into better out-of-sample CVaR numbers during sudden shocks "
+    "like COVID 2020. GARCH handles those better."
 )),
 ("", (
-    "The regime approach is not a replacement for GARCH - it is a "
-    "complement. As a strategic overlay, it adds genuine value: it flags "
-    "elevated tail dependence before a sustained stress cycle fully "
-    "materializes and delivers significantly better CVaR estimates during "
-    "slow-moving macro stress like 2022. For the fund, the recommended "
-    "approach is to run both in parallel - GARCH for daily limits, "
-    "HMM regime probability for strategic capital allocation."
+    "The regime approach is not a replacement for GARCH - it is a complement. "
+    "As a strategic overlay, it flags elevated tail dependence before a "
+    "sustained stress cycle fully materializes and delivers significantly "
+    "better CVaR estimates during slow-moving macro stress like 2022. The "
+    "recommended approach for the fund is to run both in parallel - GARCH "
+    "for daily limits, HMM regime probability for strategic capital "
+    "allocation decisions."
 )),
 ("Future Work", (
     "The most important extension is incorporating forward-looking signals "
@@ -299,50 +318,50 @@ REFERENCES_LIST = [
      "Optimization of conditional value-at-risk. Journal of Risk, 2(3), 21-41."),
 ]
 
-DISCLAIMER = (
-    "The information, trading strategies, and materials presented in this report "
-    "are provided strictly for educational and informational purposes and are "
-    "offered without any guarantees or warranties regarding their accuracy, "
-    "completeness, reliability, or timeliness. These materials are not intended "
-    "to serve as financial, legal, tax, investment, or other professional advice, "
-    "and no content herein should be interpreted as a recommendation to buy, sell, "
-    "or hold any security, financial product, or instrument, nor as an endorsement "
-    "of any specific strategy, practice, or course of action. Users of this "
-    "material are strongly encouraged to conduct their own independent research, "
-    "analysis, and due diligence or seek advice from qualified professionals before "
-    "making any financial or investment decisions. The authors, contributors, and "
-    "distributors of this material are not acting as fiduciaries and do not assume "
-    "any legal or ethical duty to the user. Trading and investing involve "
-    "substantial risks, including potential loss of principal. Past performance is "
-    "not indicative of future results. By accessing this material, users accept all "
-    "responsibility for risks inherent in any trading or investment activity based "
-    "on information presented herein."
+DISCLAIMER_TEXT = (
+    "The information, trading strategies, and materials presented in this "
+    "report are provided strictly for educational and informational purposes "
+    "and are offered without any guarantees or warranties regarding their "
+    "accuracy, completeness, reliability, or timeliness. These materials are "
+    "not intended to serve as financial, legal, tax, investment, or other "
+    "professional advice, and no content herein should be interpreted as a "
+    "recommendation to buy, sell, or hold any security, financial product, or "
+    "instrument, nor as an endorsement of any specific strategy, practice, or "
+    "course of action. Users are strongly encouraged to conduct their own "
+    "independent research and due diligence or seek advice from qualified "
+    "professionals before making any financial or investment decisions. "
+    "Trading and investing involve substantial risks, including potential loss "
+    "of principal. Past performance is not indicative of future results. By "
+    "accessing this material, users accept all responsibility for risks "
+    "inherent in any activity based on information presented herein. "
+    "The creators disclaim all liability for any losses arising from reliance "
+    "on this material to the fullest extent permitted by applicable law."
 )
 
-# ── tables ───────────────────────────────────────────────────────────────────
+# ── tables (widths must sum <= USABLE_W = 165.1 mm) ─────────────────────────
 
 TABLES = {
 "TABLE_1": {
     "title": "Table 1: Portfolio return summary statistics (2005-2024)",
     "headers": ["Statistic", "Value"],
     "rows": [
-        ["Mean daily return",  "0.0356%"],
-        ["Std deviation",      "1.169%"],
-        ["Minimum (worst day)","-12.25%"],
-        ["Maximum (best day)", "+10.62%"],
-        ["Excess kurtosis",    "14.14  (Normal = 0)"],
-        ["Skewness",           "-0.59"],
+        ["Mean daily return",   "0.0356%"],
+        ["Std deviation",       "1.169%"],
+        ["Minimum (worst day)", "-12.25%"],
+        ["Maximum (best day)",  "+10.62%"],
+        ["Excess kurtosis",     "14.14  (Normal = 0)"],
+        ["Skewness",            "-0.59"],
     ],
-    "widths": [95, 70],
+    "widths": [95, 68],
 },
 "TABLE_2": {
-    "title": "Table 2: HMM transition matrix",
+    "title": "Table 2: HMM estimated transition matrix",
     "headers": ["", "To: Low-vol", "To: High-vol"],
     "rows": [
         ["From: Low-vol",  "0.9911", "0.0089"],
         ["From: High-vol", "0.0187", "0.9813"],
     ],
-    "widths": [60, 52, 52],
+    "widths": [57, 52, 52],
 },
 "TABLE_3": {
     "title": "Table 3: Regime characteristics - HMM 2-state model (2005-2024)",
@@ -355,7 +374,7 @@ TABLES = {
         ["Skewness",           "-0.345",           "-0.369"],
         ["CVaR (95%)",         "1.56%",            "4.42%"],
     ],
-    "widths": [65, 50, 50],
+    "widths": [65, 48, 48],
 },
 "TABLE_4": {
     "title": "Table 4: Cross-asset return correlation by regime (selected pairs)",
@@ -367,7 +386,7 @@ TABLES = {
         ["SPY - XLV", "0.741", "0.859", "+0.118"],
         ["SPY - XLK", "0.869", "0.934", "+0.065"],
     ],
-    "widths": [60, 35, 35, 35],
+    "widths": [58, 34, 34, 34],
 },
 "TABLE_5": {
     "title": "Table 5: GPD parameters by regime (training set 2005-2017)",
@@ -377,7 +396,7 @@ TABLES = {
         ["Low-vol",     "2,219", "-0.073", "0.00537", "1.56%"],
         ["High-vol",    "1,052", "+0.116", "0.01237", "4.47%"],
     ],
-    "widths": [42, 25, 35, 38, 30],
+    "widths": [42, 24, 34, 37, 28],
 },
 "TABLE_6": {
     "title": "Table 6: Student-t copula tail dependence by stress period",
@@ -388,7 +407,7 @@ TABLES = {
         ["COVID 2020",             "6.69",  "0.694"],
         ["Rate Hike 2022",         "10.85", "0.429"],
     ],
-    "widths": [78, 37, 55],
+    "widths": [78, 36, 48],
 },
 "TABLE_7": {
     "title": "Table 7: CVaR model comparison - out-of-sample test period 2018-2024",
@@ -400,7 +419,7 @@ TABLES = {
         ["Regime-Hist", "3.30%", "5.0%", "<0.001*", "<0.001*", "0.0280"],
         ["Regime-EVT",  "3.24%", "5.0%", "<0.001*", "<0.001*", "0.0282"],
     ],
-    "widths": [38, 26, 26, 26, 26, 26],
+    "widths": [38, 25, 25, 27, 27, 25],
     "note": "* Rejects H0 (violation rate = 5%) at 5% significance.",
 },
 "TABLE_8": {
@@ -413,53 +432,69 @@ TABLES = {
         ["Regime-Hist", "3.30%", "28.85%", "0.40%"],
         ["Regime-EVT",  "3.24%", "28.85%", "0.40%"],
     ],
-    "widths": [43, 40, 40, 45],
+    "widths": [42, 40, 40, 42],
 },
 }
 
 FIGURES = {
-    "FIGURE_1": ("fig_eda.png",              165, "Figure 1: Portfolio returns, rolling volatility, and VIX (2005-2024). Shaded bands mark GFC 2008-09, COVID 2020, and Rate Hike 2022."),
-    "FIGURE_2": ("fig_hmm_states.png",       165, "Figure 2: HMM posterior state probabilities. Green = P(low-vol), red = P(high-vol)."),
-    "FIGURE_3": ("fig_bcp_regimes.png",      165, "Figure 3: Bayesian changepoint (PELT) segmentation. Red dashed lines = 36 detected structural breaks."),
-    "FIGURE_4": ("fig_loss_distributions.png",165,"Figure 4: Loss distributions by HMM regime (left) and QQ-plot vs. Normal (right)."),
-    "FIGURE_5": ("fig_tail_dependence.png",  130, "Figure 5: Pairwise tail dependence heatmap - Student-t copula (nu = 4.30)."),
-    "FIGURE_6": ("fig_cvar_comparison.png",  165, "Figure 6: CVaR forecast time series for all five models, 2018-2024 test period."),
-    "FIGURE_7": ("fig_mean_excess.png",      125, "Figure 7: Mean excess plot. Upward linear trend validates GPD fit with xi > 0."),
-    "FIGURE_8": ("fig_violations.png",       165, "Figure 8: CVaR violation days (red dots) by model, 2018-2024 test period."),
+    "FIGURE_1": ("fig_eda.png",               162, "Figure 1: Portfolio returns, rolling volatility, and VIX (2005-2024). Shaded bands mark GFC 2008-09, COVID 2020, and Rate Hike 2022."),
+    "FIGURE_2": ("fig_hmm_states.png",        162, "Figure 2: HMM posterior state probabilities. Green = P(low-vol), red = P(high-vol)."),
+    "FIGURE_3": ("fig_bcp_regimes.png",       162, "Figure 3: PELT changepoint segmentation with 36 detected structural breaks (red dashed lines)."),
+    "FIGURE_4": ("fig_loss_distributions.png",162, "Figure 4: Loss distributions by HMM regime (left) and QQ-plot vs. Normal (right)."),
+    "FIGURE_5": ("fig_tail_dependence.png",   128, "Figure 5: Pairwise tail dependence heatmap - Student-t copula (nu = 4.30)."),
+    "FIGURE_6": ("fig_cvar_comparison.png",   162, "Figure 6: CVaR forecast time series for all five models, 2018-2024 test period."),
+    "FIGURE_7": ("fig_mean_excess.png",       120, "Figure 7: Mean excess plot confirming GPD fit validity (upward linear trend implies xi > 0)."),
+    "FIGURE_8": ("fig_violations.png",        162, "Figure 8: CVaR violation days (red dots) per model, 2018-2024 test period."),
 }
 
 
 # ── PDF class ────────────────────────────────────────────────────────────────
 
-class Paper(FPDF):
+class AlgoGatorsPDF(FPDF):
+
     def header(self):
+        # Skip header on title page (page 1)
         if self.page_no() == 1:
             return
-        self.set_font("Helvetica", "I", 8)
-        self.set_text_color(*GRAY)
-        self.cell(0, 7, TITLE[:72] + ("..." if len(TITLE) > 72 else ""),
-                  align="L", new_x=XPos.LMARGIN, new_y=YPos.NEXT)
+        # Logo left-aligned
+        if os.path.exists(LOGO_FILE):
+            self.image(LOGO_FILE, x=self.l_margin, y=6, w=LOGO_W)
+        # Thin divider line
+        self.set_y(14)
         self.set_draw_color(*LGRAY)
-        self.line(self.l_margin, self.get_y(), self.w - self.r_margin, self.get_y())
-        self.ln(2)
+        self.set_line_width(0.3)
+        self.line(self.l_margin, self.get_y(),
+                  self.w - self.r_margin, self.get_y())
+        self.ln(3)
 
     def footer(self):
+        # No footer on title page
         if self.page_no() == 1:
             return
         self.set_y(-14)
         self.set_font("Helvetica", "I", 8)
         self.set_text_color(*GRAY)
-        self.cell(0, 8, f"Page {self.page_no() - 1}", align="C")
+        # Page number starts at 2 (matching template footer)
+        self.cell(0, 8, str(self.page_no()), align="C")
 
 
 # ── helpers ──────────────────────────────────────────────────────────────────
 
+def _scale_widths(widths):
+    """Scale table column widths down if they exceed usable page width."""
+    total = sum(widths)
+    if total > USABLE_W:
+        f = USABLE_W / total
+        return [w * f for w in widths]
+    return list(widths)
+
+
 def section_heading(pdf, num, text):
-    pdf.ln(3)
-    pdf.set_font("Helvetica", "B", 13)
-    pdf.set_text_color(*DARK_BLUE)
-    pdf.cell(0, 8, f"{num}  {text}", new_x=XPos.LMARGIN, new_y=YPos.NEXT)
-    pdf.set_draw_color(*DARK_BLUE)
+    pdf.ln(2)
+    pdf.set_font("Helvetica", "B", 14)
+    pdf.set_text_color(*HEAD_COL)
+    pdf.cell(0, 9, f"{num}  {text}", new_x=XPos.LMARGIN, new_y=YPos.NEXT)
+    pdf.set_draw_color(*HEAD_COL)
     pdf.set_line_width(0.5)
     pdf.line(pdf.l_margin, pdf.get_y(), pdf.w - pdf.r_margin, pdf.get_y())
     pdf.ln(3)
@@ -468,47 +503,42 @@ def section_heading(pdf, num, text):
 
 def sub_heading(pdf, text):
     pdf.ln(2)
-    pdf.set_font("Helvetica", "B", 10.5)
-    pdf.set_text_color(*DARK_BLUE)
+    pdf.set_font("Helvetica", "B", 11)
+    pdf.set_text_color(*HEAD_COL)
     pdf.cell(0, 6, text, new_x=XPos.LMARGIN, new_y=YPos.NEXT)
     pdf.ln(1)
     pdf.set_text_color(*BLACK)
 
 
 def body(pdf, text):
-    pdf.set_font("Helvetica", "", 10.5)
+    pdf.set_font("Helvetica", "", 11)
     pdf.set_text_color(*BLACK)
-    pdf.multi_cell(0, 5.8, text, new_x=XPos.LMARGIN, new_y=YPos.NEXT)
+    pdf.multi_cell(0, 6, text, new_x=XPos.LMARGIN, new_y=YPos.NEXT)
     pdf.ln(2)
 
 
 def draw_table(pdf, key):
-    tbl = TABLES[key]
-    widths = tbl["widths"]
-    # safety: scale down if total > USABLE_W
-    total = sum(widths)
-    if total > USABLE_W:
-        scale = USABLE_W / total
-        widths = [w * scale for w in widths]
+    tbl    = TABLES[key]
+    widths = _scale_widths(tbl["widths"])
 
     pdf.ln(2)
     pdf.set_font("Helvetica", "BI", 9)
-    pdf.set_text_color(*DARK_BLUE)
+    pdf.set_text_color(*HEAD_COL)
     pdf.multi_cell(0, 5, tbl["title"], new_x=XPos.LMARGIN, new_y=YPos.NEXT)
     pdf.ln(1)
 
-    # header row
-    pdf.set_fill_color(*ACCENT)
+    # Header row
+    pdf.set_fill_color(*TBL_HDR)
     pdf.set_text_color(*WHITE)
     pdf.set_font("Helvetica", "B", 8.5)
     for i, h in enumerate(tbl["headers"]):
         pdf.cell(widths[i], 7, h, border=1, fill=True, align="C")
     pdf.ln()
 
-    # data rows
+    # Data rows
     pdf.set_font("Helvetica", "", 8.5)
     for ri, row in enumerate(tbl["rows"]):
-        pdf.set_fill_color(*ROW_EVEN) if ri % 2 == 0 else pdf.set_fill_color(*ROW_ODD)
+        pdf.set_fill_color(*ROW_A) if ri % 2 == 0 else pdf.set_fill_color(*ROW_B)
         pdf.set_text_color(*BLACK)
         for i, cell in enumerate(row):
             align = "L" if i == 0 else "C"
@@ -519,6 +549,7 @@ def draw_table(pdf, key):
         pdf.set_font("Helvetica", "I", 7.5)
         pdf.set_text_color(*GRAY)
         pdf.cell(0, 5, tbl["note"], new_x=XPos.LMARGIN, new_y=YPos.NEXT)
+
     pdf.ln(3)
     pdf.set_text_color(*BLACK)
 
@@ -528,21 +559,28 @@ def draw_figure(pdf, key):
     if not os.path.exists(fname):
         pdf.set_font("Helvetica", "I", 9)
         pdf.set_text_color(*GRAY)
-        pdf.cell(0, 6, f"[{fname} not found]", new_x=XPos.LMARGIN, new_y=YPos.NEXT)
+        pdf.cell(0, 6, f"[{fname} not found]",
+                 new_x=XPos.LMARGIN, new_y=YPos.NEXT)
         return
+
     with PILImage.open(fname) as im:
         pw, ph = im.size
-    render_w = min(max_w, USABLE_W)
+    render_w = min(float(max_w), USABLE_W)
     render_h = render_w * ph / pw
-    if pdf.get_y() + render_h + 12 > (279.4 - 20):
+
+    # Add new page if image + caption won't fit
+    bottom_margin = 20
+    if pdf.get_y() + render_h + 12 > PAGE_H - bottom_margin:
         pdf.add_page()
+
     pdf.ln(2)
-    x_off = pdf.l_margin + (USABLE_W - render_w) / 2
+    x_off = pdf.l_margin + (USABLE_W - render_w) / 2.0
     pdf.image(fname, x=x_off, w=render_w)
     pdf.set_font("Helvetica", "I", 8.5)
     pdf.set_text_color(*GRAY)
     pdf.ln(1)
-    pdf.multi_cell(0, 5, caption, align="C", new_x=XPos.LMARGIN, new_y=YPos.NEXT)
+    pdf.multi_cell(0, 5, caption, align="C",
+                   new_x=XPos.LMARGIN, new_y=YPos.NEXT)
     pdf.ln(3)
     pdf.set_text_color(*BLACK)
 
@@ -559,126 +597,149 @@ def render_blocks(pdf, blocks):
             body(pdf, content)
 
 
-# ── pages ────────────────────────────────────────────────────────────────────
+# ── individual pages ─────────────────────────────────────────────────────────
 
-def title_page(pdf, github_url=""):
+def title_page(pdf):
     pdf.add_page()
-    pdf.set_fill_color(*DARK_BLUE)
-    pdf.rect(0, 0, pdf.w, 68, "F")
-    pdf.set_y(14)
-    pdf.set_font("Helvetica", "B", 15)
-    pdf.set_text_color(*WHITE)
+
+    # AlgoGators logo centered at top
+    if os.path.exists(LOGO_FILE):
+        logo_render_w = 70.0
+        x_logo = (PAGE_W - logo_render_w) / 2
+        pdf.image(LOGO_FILE, x=x_logo, y=22, w=logo_render_w)
+
+    pdf.set_y(52)
+    pdf.set_draw_color(*HEAD_COL)
+    pdf.set_line_width(0.5)
+    pdf.line(pdf.l_margin, pdf.get_y(), pdf.w - pdf.r_margin, pdf.get_y())
+    pdf.ln(8)
+
+    # Title
+    pdf.set_font("Helvetica", "B", 16)
+    pdf.set_text_color(*HEAD_COL)
     pdf.multi_cell(0, 9, TITLE, align="C")
     pdf.ln(5)
-    pdf.set_font("Helvetica", "", 11)
+
+    # Author / org / date
+    pdf.set_font("Helvetica", "", 12)
+    pdf.set_text_color(*BLACK)
     for line in [AUTHOR, ORG, DATE]:
         pdf.cell(0, 7, line, align="C", new_x=XPos.LMARGIN, new_y=YPos.NEXT)
 
-    if github_url:
-        pdf.ln(2)
-        pdf.set_font("Helvetica", "I", 10)
-        pdf.set_text_color(150, 200, 255)
-        pdf.cell(0, 6, f"Code & data: {github_url}", align="C",
-                 new_x=XPos.LMARGIN, new_y=YPos.NEXT)
+    # GitHub link
+    pdf.ln(2)
+    pdf.set_font("Helvetica", "I", 10)
+    pdf.set_text_color(*GRAY)
+    pdf.cell(0, 6, f"Code: {GITHUB_URL}", align="C",
+             new_x=XPos.LMARGIN, new_y=YPos.NEXT)
 
-    # Abstract (section 1 on title page)
-    pdf.set_y(80)
-    pdf.set_text_color(*DARK_BLUE)
-    pdf.set_font("Helvetica", "B", 12)
-    pdf.cell(0, 7, "1  Abstract", new_x=XPos.LMARGIN, new_y=YPos.NEXT)
-    pdf.set_draw_color(*DARK_BLUE)
+    pdf.ln(3)
+    pdf.set_draw_color(*HEAD_COL)
     pdf.set_line_width(0.5)
     pdf.line(pdf.l_margin, pdf.get_y(), pdf.w - pdf.r_margin, pdf.get_y())
-    pdf.ln(3)
-    pdf.set_fill_color(242, 245, 251)
-    pdf.set_draw_color(*ACCENT)
+
+    # ── Section 1: Abstract (on title page, matching template) ───────────────
+    pdf.ln(5)
+    pdf.set_font("Helvetica", "B", 14)
+    pdf.set_text_color(*HEAD_COL)
+    pdf.cell(0, 8, "1  Abstract", new_x=XPos.LMARGIN, new_y=YPos.NEXT)
     pdf.set_line_width(0.4)
-    pdf.set_font("Helvetica", "", 10.5)
+    pdf.line(pdf.l_margin, pdf.get_y(), pdf.w - pdf.r_margin, pdf.get_y())
+    pdf.ln(3)
+
+    pdf.set_font("Helvetica", "", 11)
     pdf.set_text_color(*BLACK)
-    pdf.multi_cell(0, 5.8, ABSTRACT_TEXT, border=1, fill=True,
-                   new_x=XPos.LMARGIN, new_y=YPos.NEXT)
+    pdf.multi_cell(0, 6, ABSTRACT_TEXT, new_x=XPos.LMARGIN, new_y=YPos.NEXT)
 
 
 def references_page(pdf):
     pdf.add_page()
     section_heading(pdf, 7, "References")
     for authors, text in REFERENCES_LIST:
-        pdf.set_font("Helvetica", "B", 10)
+        pdf.set_font("Helvetica", "B", 10.5)
         pdf.set_text_color(*BLACK)
-        pdf.multi_cell(0, 5.8, authors, new_x=XPos.LMARGIN, new_y=YPos.NEXT)
-        pdf.set_font("Helvetica", "", 10)
-        pdf.multi_cell(0, 5.8, "    " + text, new_x=XPos.LMARGIN, new_y=YPos.NEXT)
+        pdf.multi_cell(0, 6, authors, new_x=XPos.LMARGIN, new_y=YPos.NEXT)
+        pdf.set_font("Helvetica", "", 10.5)
+        pdf.multi_cell(0, 6, "    " + text,
+                       new_x=XPos.LMARGIN, new_y=YPos.NEXT)
         pdf.ln(2)
 
 
 def appendices_page(pdf):
     pdf.add_page()
     section_heading(pdf, 8, "Appendices")
-    body(pdf, "All figures referenced in this paper are embedded inline within "
-         "their respective sections. Source code and raw data files are available "
-         "in the project repository.")
-    pdf.ln(2)
-    pdf.set_font("Helvetica", "B", 9)
-    pdf.set_fill_color(*ACCENT)
+    body(pdf,
+         "All figures are embedded inline within their respective sections. "
+         "Source code, data pipeline, and model implementations are available "
+         f"at: {GITHUB_URL}")
+
+    # Figure index table
+    pdf.set_font("Helvetica", "BI", 9)
+    pdf.set_text_color(*HEAD_COL)
+    pdf.cell(0, 5, "Figure Index", new_x=XPos.LMARGIN, new_y=YPos.NEXT)
+    pdf.ln(1)
+
+    col_w = [28, 52, 82]
+    pdf.set_fill_color(*TBL_HDR)
     pdf.set_text_color(*WHITE)
-    for w, h in [(28, 7), (52, 7), (85, 7)]:
-        pdf.cell(w, h, ["Figure", "File", "Description"][[28, 52, 85].index(w)],
-                 border=1, fill=True, align="C")
+    pdf.set_font("Helvetica", "B", 8.5)
+    for h, w in zip(["Figure", "File", "Description"], col_w):
+        pdf.cell(w, 7, h, border=1, fill=True, align="C")
     pdf.ln()
+
     items = [
-        ("Figure 1", "fig_eda.png",               "Portfolio returns, rolling vol, VIX with stress shading"),
+        ("Figure 1", "fig_eda.png",               "Returns, rolling vol, VIX with stress shading"),
         ("Figure 2", "fig_hmm_states.png",         "HMM posterior state probabilities"),
-        ("Figure 3", "fig_bcp_regimes.png",        "Bayesian changepoint (PELT) segmentation"),
+        ("Figure 3", "fig_bcp_regimes.png",        "PELT changepoint segmentation"),
         ("Figure 4", "fig_loss_distributions.png", "Loss distributions by regime + QQ-plot"),
-        ("Figure 5", "fig_tail_dependence.png",    "Pairwise tail dependence heatmap (Student-t copula)"),
+        ("Figure 5", "fig_tail_dependence.png",    "Pairwise tail dependence heatmap"),
         ("Figure 6", "fig_cvar_comparison.png",    "CVaR forecast comparison, 2018-2024"),
         ("Figure 7", "fig_mean_excess.png",        "Mean excess plot (GPD validation)"),
         ("Figure 8", "fig_violations.png",         "CVaR violations by model, 2018-2024"),
     ]
+    pdf.set_font("Helvetica", "", 8.5)
     for ri, (fig, fname, desc) in enumerate(items):
-        pdf.set_fill_color(*ROW_EVEN) if ri % 2 == 0 else pdf.set_fill_color(*ROW_ODD)
+        pdf.set_fill_color(*ROW_A) if ri % 2 == 0 else pdf.set_fill_color(*ROW_B)
         pdf.set_text_color(*BLACK)
-        pdf.set_font("Helvetica", "B", 8.5)
-        pdf.cell(28, 6, fig,   border=1, fill=True, align="C")
+        pdf.set_font("Helvetica", "B", 8)
+        pdf.cell(col_w[0], 6, fig,   border=1, fill=True, align="C")
         pdf.set_font("Helvetica", "I", 8)
-        pdf.cell(52, 6, fname, border=1, fill=True, align="C")
+        pdf.cell(col_w[1], 6, fname, border=1, fill=True, align="C")
         pdf.set_font("Helvetica", "", 8)
-        pdf.cell(85, 6, desc,  border=1, fill=True, align="L")
+        pdf.cell(col_w[2], 6, desc,  border=1, fill=True, align="L")
         pdf.ln()
 
 
 def disclaimer_page(pdf):
     pdf.add_page()
-    pdf.set_draw_color(*LGRAY)
-    pdf.set_line_width(0.3)
-    pdf.rect(pdf.l_margin, pdf.get_y(), USABLE_W, 8, "")
-    pdf.set_font("Helvetica", "B", 10)
-    pdf.set_text_color(*DARK_BLUE)
-    pdf.cell(0, 8, "Disclaimer", new_x=XPos.LMARGIN, new_y=YPos.NEXT)
-    pdf.set_draw_color(*DARK_BLUE)
+    pdf.set_font("Helvetica", "B", 11)
+    pdf.set_text_color(*HEAD_COL)
+    pdf.cell(0, 7, "Disclaimer", new_x=XPos.LMARGIN, new_y=YPos.NEXT)
+    pdf.set_draw_color(*HEAD_COL)
     pdf.set_line_width(0.4)
     pdf.line(pdf.l_margin, pdf.get_y(), pdf.w - pdf.r_margin, pdf.get_y())
     pdf.ln(3)
-    pdf.set_font("Helvetica", "", 8.5)
+    pdf.set_font("Helvetica", "", 9)
     pdf.set_text_color(*GRAY)
-    pdf.multi_cell(0, 5, DISCLAIMER, new_x=XPos.LMARGIN, new_y=YPos.NEXT)
+    pdf.multi_cell(0, 5.2, DISCLAIMER_TEXT,
+                   new_x=XPos.LMARGIN, new_y=YPos.NEXT)
 
 
-# ── main ─────────────────────────────────────────────────────────────────────
+# ── build ─────────────────────────────────────────────────────────────────────
 
-def build(github_url=""):
-    pdf = Paper(orientation="P", unit="mm", format="Letter")
+def build():
+    pdf = AlgoGatorsPDF(orientation="P", unit="mm", format="Letter")
     pdf.set_margins(MARGIN, MARGIN, MARGIN)
+    # top margin larger to leave room for header logo on body pages
     pdf.set_auto_page_break(auto=True, margin=18)
 
-    title_page(pdf, github_url)
+    title_page(pdf)
 
-    pdf.add_page(); section_heading(pdf, 2, "Introduction");  render_blocks(pdf, INTRO_BLOCKS)
-    pdf.add_page(); section_heading(pdf, 3, "Methodology");   render_blocks(pdf, METHOD_BLOCKS)
-    pdf.add_page(); section_heading(pdf, 4, "Results");       render_blocks(pdf, RESULTS_BLOCKS)
-    pdf.add_page(); section_heading(pdf, 5, "Discussion");    render_blocks(pdf, DISCUSSION_BLOCKS)
-    pdf.add_page(); section_heading(pdf, 6, "Conclusion");    render_blocks(pdf, CONCLUSION_BLOCKS)
-
+    pdf.add_page(); section_heading(pdf, 2, "Introduction");  render_blocks(pdf, S_INTRO)
+    pdf.add_page(); section_heading(pdf, 3, "Methodology");   render_blocks(pdf, S_METHOD)
+    pdf.add_page(); section_heading(pdf, 4, "Results");       render_blocks(pdf, S_RESULTS)
+    pdf.add_page(); section_heading(pdf, 5, "Discussion");    render_blocks(pdf, S_DISCUSSION)
+    pdf.add_page(); section_heading(pdf, 6, "Conclusion");    render_blocks(pdf, S_CONCLUSION)
     references_page(pdf)
     appendices_page(pdf)
     disclaimer_page(pdf)
@@ -688,6 +749,4 @@ def build(github_url=""):
 
 
 if __name__ == "__main__":
-    import sys
-    url = sys.argv[1] if len(sys.argv) > 1 else ""
-    build(github_url=url)
+    build()
