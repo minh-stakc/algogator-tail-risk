@@ -1,0 +1,6 @@
+model,n_obs,viol_rate,expected_rate,kupiec_stat,kupiec_pval,kupiec_reject,cc_stat,cc_pval,cc_reject,p11_cluster,mae,rmse,quantile_score
+Static-Hist,1760,0.0148,0.05,62.871,0.0,True,70.526,0.0,True,0.1154,0.029995,0.031811,-0.001731
+Rolling-252,1760,0.0267,0.05,24.041,0.0,True,34.354,0.0,True,0.1277,0.027426,0.032689,-0.001626
+GARCH,1760,0.0358,0.05,8.262,0.004,True,9.458,0.0088,True,0.0635,0.020534,0.026825,-0.001232
+Regime-Hist,1760,0.033,0.05,12.175,0.0005,True,40.007,0.0,True,0.2069,0.028029,0.033215,-0.001803
+Regime-EVT,1760,0.0324,0.05,13.063,0.0003,True,37.284,0.0,True,0.193,0.028182,0.033437,-0.00181
